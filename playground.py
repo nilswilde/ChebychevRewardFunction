@@ -7,6 +7,7 @@ from algorithm import *
 from evaluation import compute_metrics
 from motion_planning_problem.StateLattice import StateLattice
 from main import get_planner_class
+from Lattice_Planner.graph import Graph
 # def get_planner_class(planner_type, scalarization):
 #     if planner_type == 'Dubins2D':
 #         return Dubins2DPlanner(scalarization)
@@ -29,8 +30,9 @@ def presample(planner, K=20):
 if __name__ == '__main__':
 
 
+
     print("Run experiment for planner: ", CFG['planner_type'])
-    K = 200
+    K = 1
     planner = get_planner_class(CFG['planner_type'], 'linear')
     samples = presample(planner, K)
     print('samples linear', [{'w': s['w'], 'f': s['f']} for s in samples['linear']])

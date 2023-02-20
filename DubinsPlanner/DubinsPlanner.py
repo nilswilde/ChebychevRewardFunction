@@ -1,5 +1,5 @@
 import random
-
+import matplotlib.pyplot as plt
 from Planner import *
 import math as m
 import numpy as np
@@ -100,6 +100,55 @@ class DubinsPlanner(Planner):
                 'states': best_traject['states']
                 }
 
+    def plot_trajects_and_features(self, trajects, x_axis_vals, highlight, x_label='idx', title=''):
+        fig, axes = plt.subplots(nrows=2, ncols=1, figsize=(6, 8))
+        all_sols = self.generate_trajectories()
+        print("plotting", len(self.sampled_solutions), 'sampled solutions')
+        ax = axes[0]
+        ax.set_title('' + title, fontsize=18)
+        for o in self.obstacles:
+            circle1 = plt.Circle(o['pos'], o['r'], color='red', alpha=0.5)
+            ax.add_patch(circle1)
+            # ax.add_patch(Rectangle((o['x_0'], o['y_0']), o['x_1']-o['x_0'], o['y_1']-o['y_0']))
+        for traj in all_sols:
+            ax.plot([x[0] for x in traj['states']], [x[1] for x in traj['states']], color='grey')
+        # for traj in trajects:
+        #     ax.plot([x[0] for x in traj['states']], [x[1] for x in traj['states']])
+        # for traj in planner.sampled_solutions:
+        for traj in trajects:
+            ax.plot([x[0] for x in traj['states']], [x[1] for x in traj['states']])
+        # if highlight is not None:
+        #     ax.plot([x[0] for x in highlight['states']], [x[1] for x in highlight['states']], linewidth=4, color='red')
+
+        ax.set_xlabel('x pos', fontsize=16)
+        ax.set_ylabel('y pos', fontsize=16)
+        # axes[0].set_title('Sampled Trajectories'+title)
+        ax.set_aspect('equal')
+
+        # plot Pareto front
+
+        ax = axes[1]
+        # plot ground set of trajectories
+
+        phi_1, phi_2 = [traj['f'][0] for traj in all_sols], [traj['f'][1] for traj in all_sols]
+        ax.plot(phi_1, phi_2, 'x', color='grey', label='all trajects')
+        # plot ground truth pareto curve
+        # phi_1, phi_2 = [traj['f'][0] for traj in planner.sampled_solutions], [traj['f'][1] for traj in planner.sampled_solutions]
+        phi_1, phi_2 = [traj['f'][0] for traj in trajects], [traj['f'][1] for traj in trajects]
+        ax.plot(phi_1, phi_2, 'D', color='r', label='optimal trajectories')
+        # plot sampled pareto curve
+        # phi_1, phi_2 = [traj['f'][0] for traj in trajects], [traj['f'][1] for traj in trajects]
+        # ax.plot(phi_1, phi_2, 'o', color='b', label='optimal trajectories', markersize=6)
+
+        asp = np.diff(ax.get_xlim())[0] / np.diff(ax.get_ylim())[0]
+        ax.set_aspect(asp)
+        if highlight is not None:
+            ax.plot(highlight['f'][0], highlight['f'][1], 'D', color='green', label='optimal trajectories',
+                    markersize=6)
+        ax.set_xlabel('Trajectory Length', fontsize=16)
+        ax.set_ylabel('Closeness', fontsize=16)
+
+        fig.tight_layout()
 
 class Dubins2DPlanner(DubinsPlanner):
 

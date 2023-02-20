@@ -5,6 +5,7 @@ from motion_planning_problem.StateLattice import StateLattice
 # from driver_planner import DriverPlanner
 from algorithm import *
 from evaluation import compute_metrics
+from Lattice_Planner.graph_planner import GraphPlanner
 from motion_planning_problem.StateLattice import StateLattice
 
 def get_planner_class(planner_type, scalarization):
@@ -17,6 +18,8 @@ def get_planner_class(planner_type, scalarization):
     elif planner_type == 'Dubins3D':
         return Dubins3DPlanner(scalarization)
 
+    elif planner_type == 'Graph':
+        return GraphPlanner(scalarization)
 
 
 if __name__ == '__main__':

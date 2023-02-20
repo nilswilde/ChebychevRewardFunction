@@ -1,11 +1,11 @@
 CFG = {
     # which experiment to run
     'planner_type': 'Dubins3D',
-    # 'planner_type': 'Dubins2D',
+    'planner_type': 'Dubins2D',
     # 'planner_type': 'Dubins2DObst',
-    'planner_type': 'Dubins3DObst',
+    # 'planner_type': 'Dubins3DObst',
     # 'planner_type': 'mTSP15',
-    # 'planner_type': 'Lattice',
+    'planner_type': 'Graph',
 
     'K_values': [0, 1, 3, 5, 10],
     # 'K_values': [0, 3, 5, 10, 20],
