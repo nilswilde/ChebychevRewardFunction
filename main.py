@@ -20,6 +20,8 @@ def get_planner_class(planner_type, scalarization):
 
     elif planner_type == 'Graph':
         return GraphPlanner(scalarization)
+    # elif planner_type == 'GraphMinMax':
+    #     return GraphPlannerMinMax(scalarization)
 
 
 if __name__ == '__main__':

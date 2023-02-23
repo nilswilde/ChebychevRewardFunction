@@ -17,13 +17,17 @@ def in_collision(traj, obstacles=[]):
     return False
 
 
-def min_distance_to_obst(traj, obst):
-    min_dist = float('inf')
+def max_closeness_to_obst(traj, obst):
+    max_closeness = -float('inf')
+    max_closeness = 0
     for pos in traj:
         dist = max(0, get_distance(pos, obst['pos'])-obst['r'])
-        min_dist = min(min_dist, dist)
+        # closeness = np.exp(-dist)
+        closeness = 3-dist
+        max_closeness = max(max_closeness, closeness)
+        # max_closeness += closeness
     # return 5-min_dist
-    return np.exp(-min_dist)
+    return max_closeness
 
 
 def generate_random_goal():
@@ -235,8 +239,8 @@ class Dubins2DPlannerObstacle(Dubins2DPlanner):
 
         self.obstacles = [
             {'pos': (1.8, 2.0), 'r': .2, },
-                          {'pos': (1.8, 1.3), 'r': .2, },
-                          {'pos': (0.5, 2), 'r': .2, },
+                          # {'pos': (1.8, 1.3), 'r': .2, },
+                          # {'pos': (0.5, 2), 'r': .2, },
                           ]
         self.generate_trajectories(force_new=True)
         # print("2D Dubings, goal", self.goal)
@@ -261,8 +265,9 @@ class Dubins2DPlannerObstacle(Dubins2DPlanner):
 
         obst_distances = []
         for obst in self.obstacles:
-            min_dist = min_distance_to_obst(traj, obst)
+            min_dist = max_closeness_to_obst(traj, obst)
             obst_distances += [min_dist]
+        features = [L, max(obst_distances)/L]
         features = [L, max(obst_distances)]
         # features = [L-4, max(obst_distances)**(1)*10-6] # hand made normalization, not great but meh
         # features = [L-3, max(obst_distances)**(1)*10-5]

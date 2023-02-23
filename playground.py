@@ -19,6 +19,7 @@ from Lattice_Planner.graph import Graph
 def presample(planner, K=20):
     samples = {}
     for scalarization in ['linear', 'chebyshev']:
+    # for scalarization in ['linear']:
         planner.scalarization_mode = scalarization
 
         samples[scalarization] = compute_k_grid_samples(planner, K)
@@ -29,16 +30,20 @@ def presample(planner, K=20):
 
 if __name__ == '__main__':
 
-
+    n = 11
+    random.seed(n)
+    np.random.seed(n)
 
     print("Run experiment for planner: ", CFG['planner_type'])
-    K = 1
+    K = 50
     planner = get_planner_class(CFG['planner_type'], 'linear')
+
     samples = presample(planner, K)
-    print('samples linear', [{'w': s['w'], 'f': s['f']} for s in samples['linear']])
-    print('samples cheb', [{'w': s['w'], 'f': s['f']} for s in samples['chebyshev']])
-    metric = compute_metrics(planner, samples, K)
+    # print('samples linear', [{'w': s['w'], 'f': s['f']} for s in samples['linear']])
+    # print('samples cheb', [{'w': s['w'], 'f': s['f']} for s in samples['chebyshev']])
+    # metric = compute_metrics(planner, samples, K)
     if CFG['show_plots']:
-        for scalarization in ['linear', 'chebyshev']:
+        # for scalarization in ['linear', 'chebyshev']:
+        for scalarization in samples.keys():
             illustrate_2d(planner, samples[scalarization], label=scalarization+'', block=False)
         plt.show()

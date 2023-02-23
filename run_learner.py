@@ -1,8 +1,8 @@
 import copy
 
 import numpy as np
-from user import *
-from learning_algorithm import *
+from learning_from_choice_framework.user import *
+from learning_from_choice_framework.learning_algorithm import *
 from main import get_planner_class
 from algorithm import *
 import time, os, errno, csv

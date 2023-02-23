@@ -6,8 +6,8 @@ import numpy as np
 
 from DubinsPlanner.auxillary import *
 
-relabel= {'linear':'Linear User Model',
-          'chebyshev':'Chebyshev User Model'}
+relabel= {'linear':'Linear Model',
+          'chebyshev':'Chebyshev Model'}
 
 def illustrate_2d(planner, robust_samples, highlight=None,label='',block=True):
     """
