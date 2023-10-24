@@ -10,20 +10,23 @@ class Planner():
     '''
     def __init__(self, dim, scalarization, label='generic'):
         self.dim = dim # number of features
-        self.label = label + '_' + scalarization
+        self.label = label
         self.scalarization_mode = scalarization
         self.value_bounds = [{'lb': 0, 'ub': 1} for _ in range(self.dim)]# min and max values for each feature
         self.basis = None # basic solutions, e.g., for the [1 0 0], [0 1 0], [0 0 1] vectors
+
         self.sampled_solutions = []  # high number of sampled solutions, only for evaluation
 
     def __repr__(self):
         return self.label
 
     def get_cost_of_traj(self, traj, w):
+        w_lift = [w_i+.0000001 for w_i in w]
         if self.scalarization_mode == 'linear':
-            return np.dot(w, traj['f'])
+            return np.dot(w_lift, traj['f'])
         if self.scalarization_mode == 'chebyshev':
-            return np.max(np.multiply(w, traj['f']))
+            return np.max(np.multiply(w_lift, traj['f'])) + .0000001 * np.dot(w_lift, traj['f'])
+
 
 
     def get_value_bounds(self):
@@ -46,6 +49,7 @@ class Planner():
 
         :return:
         '''
+        print('compute basis', self.dim)
         basis = []
         value_bounds = [{'lb': float('inf'), 'ub': -float('inf')} for _ in range(self.dim)]
         for i in range(self.dim):
@@ -57,7 +61,10 @@ class Planner():
         self.basis = basis
         return basis
 
-    def find_optimum(self, w, lookup_table=None):
+    def find_optimum_with_LUT(self,w):
+        return self.find_optimum(w)
+
+    def find_optimum(self, w):
         '''
         Solve the planning problem for a given weight w
         :param w:
@@ -67,10 +74,10 @@ class Planner():
                 'f': [1]*self.dim,
                 'states': [(i,i)for i in range(10)]}
 
-    def find_optima_for_set_of_weights(self, weights, lookup_table=None):
+    def find_optima_for_set_of_weights(self, weights, sample_mode=False):
         trajects, opt_costs = [], []
         for w in weights:
-            traj = self.find_optimum(w, lookup_table)
+            traj = self.find_optimum(w)
             cost = self.get_cost_of_traj(traj, w)
             traj['u'] = cost
             trajects.append(traj)
@@ -195,13 +202,18 @@ class Planner():
         np.savez(path+'/' + self.label + '_' + tag+'.npz', feature_set=feature_set, input_set=input_set,
                  w_set=w_set)
 
-    def save_object(self):
-        with open(self.label+'.pickle', 'wb') as outp:  # Overwrites any existing file.
+    def save_object(self, tag):
+        print('save planner', self.label)
+        folder = 'presamples/' + self.label +'/'
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+        with open(folder +self.label+'_'+tag+'.pickle', 'wb') as outp:  # Overwrites any existing file.
             pickle.dump(self, outp, pickle.HIGHEST_PROTOCOL)
 
 
-def load_planner(label):
-    with open(label+'.pickle', 'rb') as inp:
+def load_planner(label, folder):
+    print('load', label)
+    with open(folder+label+'.pickle', 'rb') as inp:
         loaded_object = pickle.load(inp)
     return loaded_object
 

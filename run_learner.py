@@ -8,7 +8,7 @@ from algorithm import *
 import time, os, errno, csv
 import pandas as pd
 from config import CFG
-
+from Planner import load_planner
 
 
 def learn_user(user, learner, max_iter=10):
@@ -81,24 +81,35 @@ def reduce_samples(samples):
     print("reduced sample set", len(samples), len(new_samples))
     return new_samples
 
-def presample(K=20):
+def presample(K=20, load=False):
     samples = {}
     planners = {}
-    for scalarization in ['linear', 'chebyshev']:
-        planner = get_planner_class(CFG['planner_type'],
-                                    scalarization)  # generate planner first to then be used for different K
+    if not load:
+        for scalarization in ['linear', 'chebyshev']:
+            planner = get_planner_class(CFG['planner_type'],
+                                        scalarization)  # generate planner first to then be used for different K
 
-        samples[scalarization] = compute_k_grid_samples(planner, K)
-        planners[scalarization] = planner
-        # planner.sampled_solutions = normalize_features(planner, planner.sampled_solutions)
-        samples[scalarization] = reduce_samples(samples[scalarization])
+            samples[scalarization] = compute_k_grid_samples(planner, K)
+            planners[scalarization] = planner
+
+            # planner.sampled_solutions = normalize_features(planner, planner.sampled_solutions)
+            samples[scalarization] = reduce_samples(samples[scalarization])
+
+    else:
+        for scalarization in ['linear', 'chebyshev']:
+            planner = load_planner(CFG['planner_type']+'_'+scalarization)
+            planners[scalarization] = planner
+            samples[scalarization] = reduce_samples(planner.sampled_solutions)
+            from DubinsPlanner.Dubins_plots import illustrate_2d
+            illustrate_2d(planner, samples[scalarization], label=scalarization + '', block=False)
+        import matplotlib.pyplot as plt
+        plt.show()
     return samples, planners
-
-def run_trial():
+def run_trial(load_samples=False):
     """
     :return:
     """
-    num_presamples = 30
+    num_presamples = 500
     identifier = int(time.time() * 100)
     metrics_data = []
     for _ in range(1): # repeat with different goal locations
@@ -106,11 +117,11 @@ def run_trial():
 
         print("Run experiment for planner: ", CFG['planner_type'])
 
-        samples, planners = presample(num_presamples)
+        samples, planners = presample(num_presamples, load=load_samples)
         print('lin samples', [(s['w'],s['f']) for s in samples['linear']])
         print('che samples', [(s['w'],s['f']) for s in samples['chebyshev']])
-        user_samples, user_planners = presample(num_presamples)
-        for _ in range(1):
+        user_samples, user_planners = presample(num_presamples, load=load_samples)
+        for _ in range(5): # number of different users
             user_modes = ['chebyshev','linear']
             for user_mode in user_modes:
                 user_cfg = {'type':'deterministic', 'scalarization':user_mode}
@@ -177,9 +188,9 @@ def save_metrics(metrics, identifier):
 
 if __name__ == '__main__':
     n = random.randint(0,1000)
-    n = 17
+    # n = 17
     np.random.seed(n)
     random.seed(n)
     print('random seed', n)
-    for _ in range(5):
-        run_trial()
+    for _ in range(1):
+        run_trial(load_samples=True)

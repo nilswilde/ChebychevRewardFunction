@@ -1,11 +1,13 @@
 from config import CFG
 from DubinsPlanner.Dubins_plots import *
 from DubinsPlanner.DubinsPlanner import *
+from DubinsPlanner.DubinsAdvanced import *
+from Driver.Driver import Driver
 from motion_planning_problem.StateLattice import StateLattice
 # from driver_planner import DriverPlanner
 from algorithm import *
 from evaluation import compute_metrics
-from Lattice_Planner.graph_planner import GraphPlanner
+from Lattice_Planner.graph_planner import GraphPlanner, GraphPlannerMinMax
 from motion_planning_problem.StateLattice import StateLattice
 
 def get_planner_class(planner_type, scalarization):
@@ -17,11 +19,17 @@ def get_planner_class(planner_type, scalarization):
         return Dubins3DPlannerObstacle(scalarization)
     elif planner_type == 'Dubins3D':
         return Dubins3DPlanner(scalarization)
+    elif planner_type == 'Dubins2DAdvanced':
+        return DubinsAdvanced(scalarization)
+
 
     elif planner_type == 'Graph':
         return GraphPlanner(scalarization)
-    # elif planner_type == 'GraphMinMax':
-    #     return GraphPlannerMinMax(scalarization)
+    elif planner_type == 'GraphMinMax':
+        return GraphPlannerMinMax(scalarization)
+
+    elif planner_type == 'Driver':
+        return Driver(scalarization)
 
 
 if __name__ == '__main__':

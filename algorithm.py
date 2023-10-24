@@ -165,17 +165,25 @@ def max_reg_in_neighbourhood_linprog(neighbourhood, planner):
     return list(w), list(lambdas)
 
 def compute_k_grid_samples(planner, K):
+    print('compute ',K, 'grid samples')
     weights = []
     if planner.dim == 2:
-        for k in range(K):
-            w_1_val = (k+1)/(K+1)
+        for k in range(K+1):
+            w_1_val = (k)/(K)
             weights.append([w_1_val, 1-w_1_val])
     else:
-        for k in range(K):
+        for i in range(planner.dim):
+            w=[0]*planner.dim
+            w[i]=1
+            weights.append(list(w))
+        np.random.seed(71)
+        print('generating ', K, 'random samples')
+        for k in range(K-planner.dim):
             w = np.random.random(planner.dim)
             w = np.divide(w, sum(w))
             weights.append(list(w))
     samples = []
+    print(weights)
     for w in weights:
         traj = planner.find_optimum(w)
         samples.append(traj)

@@ -6,7 +6,7 @@ import numpy as np
 import math as m
 import pandas as pd
 
-def compute_metrics(planner, samples, K):
+def compute_metrics(planner, samples, K, save=True):
     """
 
     :param planner:
@@ -18,7 +18,7 @@ def compute_metrics(planner, samples, K):
     for label in samples.keys():
         stats = {'sampler': label, 'planner': planner.label, 'K':K}
         norm_samples = samples[label]#normalize_features(planner, samples[label])
-        stats.update(planner.compute_minmax_regret(norm_samples))
+        # stats.update(planner.compute_minmax_regret(norm_samples))
         stats = compute_dispersion(stats, norm_samples)
         # stats = compute_hypervolume(stats, planner, norm_samples)
         print(stats)
@@ -26,7 +26,8 @@ def compute_metrics(planner, samples, K):
         metrics.append(stats)
 
     df = pd.DataFrame(metrics)
-    save_metrics(planner, df, K)
+    if save:
+        save_metrics(planner, df, K)
     return metrics
 
 
