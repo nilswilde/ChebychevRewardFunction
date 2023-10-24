@@ -11,8 +11,10 @@ from matplotlib.animation import FuncAnimation
 from matplotlib.animation import FFMpegWriter
 from matplotlib.patches import Circle
 
-import gurobipy as gp
-from gurobipy import GRB
+# import gurobipy as gp
+# from gurobipy import GRB
+
+
 def get_distance(vertex, other):
     return m.sqrt((vertex[0] - other[0]) ** 2 + (vertex[1] - other[1]) ** 2)
 
@@ -33,15 +35,18 @@ class Graph:
         self.neighbours = {}
         self.costs = {}  # dictionary with (v,u) keys, values are the distance
         self.edge_features = {}
+        self.dim = 2  # number of features
+        self.w = [1, 1]
         self.weighted_edge_features = {}
-
-        self.dim = 2 # number of features
 
         self.incidence_matrix = None
 
         self.x_range = len(self.map_img[0])
         self.y_range = len(self.map_img)
-        self.generate_prm(500, 5)
+        self.generate_prm(1000, 5)
+
+        self.planning_budget = 50
+        # self.plot()
 
     def generate_prm(self, number_vertices=10, k=8, symmetric=True):
         """
@@ -51,7 +56,7 @@ class Graph:
         :param symmetric: should the PRM graph be symmetric? Default: True
         :return:
         """
-        np.random.seed(1)
+        np.random.seed(10)
         vertices_reached = []
 
         min_dist = .05 * self.x_range
@@ -93,7 +98,7 @@ class Graph:
                         if u not in self.neighbours[v]:
                             self.neighbours[v] += [u]
 
-                        if (v,u) not in self.edges.keys():
+                        if (v, u) not in self.edges.keys():
                             vertices_reached += [u]
                             num_connections += 1
                             self.edges[(v, u)] = d
@@ -110,89 +115,48 @@ class Graph:
                 if num_connections == 0 and v not in vertices_reached:  # if a vertex cannot be connected to any other vertex, remove it from the graph
                     self.vertices.remove(v)
 
-
             if max(self.edges.values()) < float('inf'):  # check if we were able to construct a connected graph
                 break
-
-        self.setup_node_arc_matrix()
+        # self.plot()
+        # self.setup_node_arc_matrix()
 
     def set_edge_costs(self, w):
-        eps = .00001
-        # eps = .0000
+        self.w = copy.deepcopy(w)
+        # eps = .00001
+        eps = .0000
         for e in self.edges.keys():
             self.costs[e] = np.dot(w, self.edge_features[e]) + eps
-            self.weighted_edge_features[e] = list(np.multiply(w, self.edge_features[e])+eps)
-
+            self.weighted_edge_features[e] = list(np.multiply(w, self.edge_features[e]) + eps)
 
     def compute_edge_features(self, e):
         obst_dist = (self.vertex_obst_dists[e[0]] + self.vertex_obst_dists[e[1]]) / 2
-        closeness = np.exp(-.05*obst_dist)
+        closeness = np.exp(-.05 * obst_dist)
         # closeness = (np.max(list(self.vertex_obst_dists.values())) - obst_dist + 1) / 1000000
-        return [self.edges[e]/100, closeness*1000]
+        # return [self.edges[e] / 100, closeness * 1]
+        return [self.edges[e] / 100, closeness * 100]
+
 
     def compute_path_features(self, path):
-        dist, risk = 0, 0
-        for idx in range(len(path) - 1):
-            v, u = path[idx], path[idx + 1]
-            edge_dist, edge_risk = self.edge_features[(v, u)]
-            dist += edge_dist
-            risk += edge_risk
-            # risk = max(risk, edge_risk)
-
-        return [dist, risk]
-
-    def setup_node_arc_matrix(self):
-        self.incidence_matrix = [[0] * len(self.edges) for _ in range(len(self.vertices))]
-        edge_list = list(self.edges.keys())
-        for e_idx in range(len(edge_list)):
-            e = edge_list[e_idx]
-            v_idx, u_idx = self.vertices.index(e[0]), self.vertices.index(e[1])
-            self.incidence_matrix[v_idx][e_idx] = 1
-            self.incidence_matrix[u_idx][e_idx] = -1
+        path_features = [0, 0]
+        weighted_path_features = [0, 0]
+        for i in range(len(path) - 1):
+            e = (path[i], path[i + 1])
+            weighted_path_features[0] += self.weighted_edge_features[e][0]
+            weighted_path_features[1] += self.weighted_edge_features[e][1]
+            # weighted_path_features[1] = max(weighted_path_features[1], self.weighted_edge_features[e][1])
+            path_features[0] += self.edge_features[e][0]
+            path_features[1] += self.edge_features[e][1]
+            # path_features[1] = max(path_features[1], self.edge_features[e][1])
+        return weighted_path_features, path_features
 
 
-    def reconstruct_path(self, s, t, decision_vector_raw):
-        decision_vector = [round(x, 2) for x in decision_vector_raw]
-        next_pointer = {}
-        open_list = []
-        edge_list = list(self.edges.keys())
-        # print('s,t', s,t)
-        for e_idx in range(len(edge_list)):
-            if decision_vector[e_idx] == 1:
-                v, u = edge_list[e_idx]
-                open_list.append([u])
-                next_pointer[v] = u
-        vertices = [s]
-        # print(next_pointer)
-        # print(open_list)
-        while True:
-            v = vertices[-1]
-            if v == t:
-                return vertices
-            if len(vertices)>50:
-                print('vertices', self.vertices)
-                print('edges', self.edges.keys())
-                print('trace', v, 'next', next_pointer[v], vertices)
-                self.plot(paths=[vertices])
-                raise
-
-            try:
-                vertices += [next_pointer[v]]
-            except:
-                print(decision_vector)
-                print(list(self.costs.values()))
-                self.plot(paths=[vertices])
-                raise
-        return None
-
-    def setup_flow_constraints(self, s,t):
+    def setup_flow_constraints(self, s, t):
         A_eq = copy.deepcopy(self.incidence_matrix)
         s_idx, t_idx = self.vertices.index(s), self.vertices.index(t)
         b_eq = [0] * len(self.vertices)
         b_eq[s_idx] = 1
         b_eq[t_idx] = -1
         return A_eq, b_eq
-
 
     def check_connectivity(self):
         for v in self.vertices:
@@ -269,11 +233,11 @@ class Graph:
             if path is not None:
                 for idx in range(len(path)):
                     v = path[idx]
-                    x.append(v[0]+random.random()), y.append(v[1]+random.random())
+                    x.append(v[0] + random.random()), y.append(v[1] + random.random())
                     ax.scatter(v[0], v[1], color=cols[path_idx], s=60, zorder=3)
                     if idx < len(path) - 1:
                         u = path[idx + 1]
-                        ax.plot([v[0], u[0]], [v[1], u[1]], color=cols[path_idx], zorder=1, linewidth = 5)
+                        ax.plot([v[0], u[0]], [v[1], u[1]], color=cols[path_idx], zorder=1, linewidth=5)
 
         plt.show(block=block)
         return fig, ax
@@ -324,226 +288,96 @@ class Graph:
 
         plt.show()
 
-    def compute_shortest_path(self, s, t, scalarization_mode='linear'):
+    def compute_shortest_path(self, s, g, scalarization='linear', heuristic=False):
 
-        return self.shortest_path(s, t, scalarization_mode)
-        # if scalarization_mode == 'linear':
-        #     return super().shortest_path_LP_minsum(s, t)
-        #
-        # else:
-        #     return super().shortest_path_LP_minmax(s, t)
-    def shortest_path_LP_minsum(self, s, t):
-        """
-
-        """
-        print('shortest path LP minsum')
-        # setup float constraints
-        A_eq, b_eq = self.setup_flow_constraints(s, t)
-        # setup objective
-        c = list(self.costs.values())
-        res = linprog(c, A_eq=A_eq, b_eq=b_eq, bounds=[0, 1])
-        return self.reconstruct_path(s, t, res.x)
-
-
-    def shortest_path_LP_minmax(self, s, t):
-        """
-
-        """
-        print('shortest path LP minmax')
-        # setup float constraints
-        A_eq, b_eq = self.setup_flow_constraints(s, t)
-        A_eq = [a_i + [0] for a_i in A_eq]
-        # setup objective
-        c = [0] * len(list(self.costs.values()))
-        c += [1]  # the objective is only minimizing the auxillary variable t
-
-        # setup inequality constraints for min max formulation
-        A_ub, b_ub = [], []
-        for i in range(self.dim):
-            weighted_edge_features = list(self.weighted_edge_features.values())
-            weighted_features_i = [elem[i] for elem in weighted_edge_features]
-            a_i = weighted_features_i + [-1]
-            A_ub += [a_i]
-            b_ub += [0]
-
-        bounds = [(0, 1)] * len(self.edges.keys())
-        bounds += [(None, None)]
-        res = linprog(c, A_eq=A_eq, b_eq=b_eq, A_ub=A_ub, b_ub=b_ub, bounds=bounds)
-        x = [round(x) for x in res.x]
-        return self.reconstruct_path(s, t, x)
-
-
-
-    # def shortest_path_LP_minsum(self, s, t):
-    #     """
-    #
-    #     """
-    #
-    #     print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
-    #     return self.single_shortest_path_linear(s,t)
-    #     A_eq, b_eq = self.setup_flow_constraints(s, t)
-    #     A_eq = [a_i + [0] for a_i in A_eq]
-    #
-    #     c = [0] * len(list(self.costs.values()))
-    #     c += [1]  # the objective is only minimizing the auxillary variable t
-    #
-    #     # setup inequality constraints for min max formulation
-    #     weighted_edge_features = list(self.weighted_edge_features.values())
-    #
-    #     # setup inequality constraints for min max formulation
-    #     weighted_edge_features = list(self.weighted_edge_features.values())
-    #     A_ub, b_ub = [], []
-    #
-    #     weighted_dist = [elem[0] for elem in weighted_edge_features]
-    #     a_i_basic = weighted_dist + [-1]
-    #     weighted_risk = [elem[1] for elem in weighted_edge_features]
-    #     for j in range(len(weighted_risk)):
-    #         a_i = copy.deepcopy(a_i_basic)
-    #         a_i[j] += weighted_risk[j]
-    #         A_ub += [a_i]
-    #         b_ub += [0]
-    #
-    #     m = gp.Model("minsum")
-    #     m.Params.LogToConsole = 0
-    #     # Create variables
-    #     for e in range(len(weighted_edge_features)):
-    #         m.addVar(vtype=GRB.BINARY, name="x_" + str(e))
-    #     t_aux = m.addVar(vtype=GRB.CONTINUOUS, name="t")
-    #     m.setObjective(t_aux, GRB.MINIMIZE)
-    #     m.addMConstr(np.array(A_eq), None, '=', np.array(b_eq))
-    #     m.addMConstr(np.array(A_ub), None, '<=', np.array(b_ub))
-    #     m.optimize()
-    #
-    #     x = []
-    #     for v in m.getVars():
-    #         if v.VarName != 't':
-    #             x.append(int(v.X))
-    #
-    #     path = self.reconstruct_path(s, t, x)
-    #     # self.plot(paths=[path])
-    #     return path
-    #
-    #
-    # def shortest_path_LP_minmax(self, s, t):
-    #     """
-    #
-    #     """
-    #     t_s = time.time()
-    #     print("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")
-    #     return self.single_shortest_path_chebyshev(s,t)
-    #     # setup float constraints
-    #     A_eq, b_eq = self.setup_flow_constraints(s,t)
-    #     A_eq = [a_i + [0] for a_i in A_eq]
-    #
-    #     c = [0] * len(list(self.costs.values()))
-    #     c += [1] # the objective is only minimizing the auxillary variable t
-    #
-    #     # setup inequality constraints for min max formulation
-    #     weighted_edge_features = list(self.weighted_edge_features.values())
-    #     A_ub, b_ub = [], []
-    #     # i = 0 -- the total distance feature
-    #     weighted_features_i = [elem[0] for elem in weighted_edge_features]
-    #     a_i = weighted_features_i + [-1]
-    #     A_ub += [a_i]
-    #     b_ub += [0]
-    #
-    #     # i = 1 the max closeness feature
-    #     weighted_features_i = [elem[1] for elem in weighted_edge_features]
-    #     # a_i = weighted_features_i + [-1]
-    #     # A_ub += [a_i]
-    #     # b_ub += [0]
-    #     for j in range(len(weighted_features_i)):
-    #         a_i = [0]*len(weighted_features_i)
-    #         a_i[j] = weighted_features_i[j]
-    #         a_i += [-1]
-    #         A_ub += [a_i]
-    #         b_ub += [0]
-    #
-    #     m = gp.Model("minmax")
-    #     m.Params.LogToConsole = 0
-    #     # Create variables
-    #     for e in range(len(weighted_features_i)):
-    #         m.addVar(vtype=GRB.BINARY, name="x_"+str(e))
-    #     t_aux = m.addVar(vtype=GRB.CONTINUOUS, name="t")
-    #     m.setObjective(t_aux, GRB.MINIMIZE)
-    #     m.addMConstr(np.array(A_eq), None, '=', np.array(b_eq))
-    #     m.addMConstr(np.array(A_ub), None, '<=', np.array(b_ub))
-    #
-    #     m.optimize()
-    #
-    #     x = []
-    #     for v in m.getVars():
-    #         if v.VarName != 't':
-    #             x.append(int(v.X))
-    #
-    #     # print('Obj: %g' % m.ObjVal)
-    #     # print('x', x)
-    #     path = self.reconstruct_path(s, t, x)
-    #     # self.plot(paths=[path])
-    #     print('ILP time', round(time.time()-t_s, 4))
-    #     return path
-
-
-
-
-    def shortest_path(self, s, g, scalarization):
         """
 
         """
         import heapq
-        def _get_cost_of_path(path):
-            features_vals = [0, 0]
-            length = 0
-            for i in range(len(path) - 1):
-                e = (path[i], path[i + 1])
-                length += self.edges[e]
-                weighted_edge_features = self.weighted_edge_features[e]
-                features_vals[0] += weighted_edge_features[0]
-                features_vals[1] = features_vals[1]+weighted_edge_features[1]
-            weighted_cost_vec = features_vals
-            if scalarization == 'linear':
-                return sum(weighted_cost_vec), length
-            else:
-                return max(weighted_cost_vec), length
+        def path_dominated(path_to_v, other_paths_to_v, v):
+            _, features_j = self.compute_path_features(list(path_to_v) + [v])
+            # print('comp sub paths', path_to_v)
+            for other_path in other_paths_to_v:
+                # print('other', other_path)
+                _, features_i = self.compute_path_features(list(other_path) + [v])
+                if np.all(np.array(features_i) <= np.array(features_j)) \
+                        and np.any(np.array(features_i) < np.array(features_j)):
+                    return True
+            return False
 
-        print('Run shortest path search, cehbyshev', s, g)
+        print('Run shortest path search', scalarization, s, g)
+        t_s = time.time()
 
-        g_score = {}
-        f_score = {}
         paths_to_v = {}
         for v in self.vertices:
-            g_score[v] = float('inf')
-            f_score[v] = float('inf')
             paths_to_v[v] = []
 
-        g_score[s] = 0
-        f_score[s] = 0
         paths_to_v[s] = [[]]
         open_set = [(0, s, [])]
         heapq.heapify(open_set)
-        max_path_records = 1 if scalarization == 'linear' else 100
-
+        # max_path_records = 1 if scalarization == 'linear' else 200
+        max_path_records = self.planning_budget
+        print('MAX COST PATH SEARCH', max_path_records)
+        iter=0
         while len(open_set) > 0:
-            _, curr, path_to_curr = heapq.heappop(open_set)
-            if curr == g:
-                break
+            iter += 1
+            # print('iter', iter, len(open_set))
+            f, curr, path_to_prev = heapq.heappop(open_set)
+
+            if curr == g:  # terminate when the goal is found
+                print('shortest path in ', (round(time.time() - t_s, 4)), self.compute_path_features(list(list(path_to_prev) + [curr])))
+                return list(path_to_prev) + [curr]
+
+            path_to_curr = tuple(list(path_to_prev) + [curr])
             neighbours = self.neighbours[curr]
             for neigh in neighbours:
-                path_to_neigh = tuple(list(path_to_curr) + [curr])
-                tent_score, _ = _get_cost_of_path(list(path_to_neigh) + [neigh])
-                if neigh not in path_to_neigh:  # avoid cycles
-                    if path_to_neigh not in paths_to_v[neigh] and len(paths_to_v[neigh]) < max_path_records:
-                        paths_to_v[neigh] += [path_to_neigh]
-                        g_score[neigh] = tent_score
-                        f_score[neigh] = tent_score
-                        heapq.heappush(open_set, (f_score[neigh], neigh, path_to_neigh))
 
-        best_cost, best_length, best_path = float('inf'), float('inf'), None
-        for path in paths_to_v[g]:
-            full_path = list(path) + [g]
-            cost, length = _get_cost_of_path(full_path)
-            if cost < best_cost:
-                best_cost = cost
-                best_path = full_path
+                # tent_score = max(weighted_cost_vec)
+                if neigh in path_to_curr:  # avoid cycles
+                    continue
+                if path_to_curr in paths_to_v[neigh]:  # avoid duplicates
+                    continue
+                if len(paths_to_v[neigh]) >= max_path_records:  # budget cuttoff for paths leading to a vertex
+                    continue
 
-        return best_path
+                if path_dominated(path_to_curr, paths_to_v[neigh], neigh):
+                    # print('path sub features dominated')
+                    continue
+                if len(path_to_curr) != len(set(path_to_curr)):
+                    raise
+                paths_to_v[neigh] += [copy.deepcopy(path_to_curr)]
+                weighted_cost_vec, _ = self.compute_path_features(list(path_to_curr) + [neigh])
+                if heuristic:
+                    weighted_cost_vec[0] += self.w[0] * get_distance(neigh, g) / 100
+                if scalarization == 'linear':
+                    tent_score = sum(weighted_cost_vec)
+                else:
+                    tent_score = max(weighted_cost_vec) + .00001 *sum(weighted_cost_vec)
+                heapq.heappush(open_set, (tent_score, neigh, path_to_curr))
+        # # print("chebyshev path search exhausted")
+        # # print('paths_to_goal', len(paths_to_v[g]))
+        # best_cost, best_length, best_path = float('inf'),float('inf'), None
+        # for path in paths_to_v[g]:
+        #     full_path = list(path) + [g]
+        #     weighted_cost_vec, _ = _get_path_features(full_path)
+        #     # if scalarization == 'linear':
+        #     #     cost = sum(weighted_cost_vec)
+        #     # else:
+        #     #     cost = max(weighted_cost_vec)
+        #     cost = max(weighted_cost_vec)
+        #     if cost < best_cost:
+        #         best_cost = cost
+        #         best_path = full_path
+        # return best_path
+
+class GraphMinMax(Graph):
+    def compute_path_features(self, path):
+        path_features = [0, 0]
+        weighted_path_features = [0, 0]
+        for i in range(len(path) - 1):
+            e = (path[i], path[i + 1])
+            weighted_path_features[0] += self.weighted_edge_features[e][0]
+            weighted_path_features[1] = max(weighted_path_features[1], self.weighted_edge_features[e][1])
+            path_features[0] += self.edge_features[e][0]
+            path_features[1] = max(path_features[1], self.edge_features[e][1])
+        return weighted_path_features, path_features

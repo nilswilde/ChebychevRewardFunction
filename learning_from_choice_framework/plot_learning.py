@@ -25,7 +25,7 @@ error_labels = {'regret': 'Regret',
                 }
 
 path = 'simulation_data/'
-# path = 'simulation_data current/'
+# path = 'simulation_data_graph2d/'
 # path = 'simulation_data good ish !/'
 
 

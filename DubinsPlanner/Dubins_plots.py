@@ -3,7 +3,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 from matplotlib.patches import Rectangle
 import numpy as np
-
+from matplotlib import cm
 from DubinsPlanner.auxillary import *
 
 relabel= {'linear':'Linear Model',
@@ -20,13 +20,12 @@ def illustrate_2d(planner, robust_samples, highlight=None,label='',block=True):
     """
     # if len(planner.sampled_solutions) == 0:
     #     planner.generate_evaluation_samples()
-    opt_trajs = planner.sampled_solutions
-    weights = [traj['w'] for traj in opt_trajs]
-
-    planner.plot_trajects_and_features(robust_samples, [traj['w'][0] for traj in robust_samples], highlight,
-                               x_label='w_1', title=relabel[label])
+    # opt_trajs = planner.sampled_solutions
+    # weights = [traj['w'] for traj in opt_trajs]
+    print(planner)
+    planner.plot_trajects_and_features(robust_samples, title=label, block=block)
     # plot_approximation(planner, weights, opt_trajs, robust_samples, highlight, title=label)
-    plt.show(block=block)
+
 
 
 

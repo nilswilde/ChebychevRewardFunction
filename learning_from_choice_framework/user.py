@@ -31,7 +31,6 @@ class User():
         self.scalarization = user_cfg['scalarization']
         self.sol = self.sample_weight()
         self.w = self.sol['w']
-        # self.sol = planner.find_optimum(self.w)
         print('user sol, w=', self.sol['w'], 'f=', self.sol['f'])
 
     def sample_weight(self):

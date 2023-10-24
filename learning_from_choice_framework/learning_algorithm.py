@@ -9,10 +9,12 @@ from heapq import *
 class Learner():
 
     def __init__(self, planner, samples, learner_cfg):
+        print('\n\n innit learner')
         self.planner = planner
         self.dim = planner.dim
         self.samples = samples
         print('samples learner', [{'w': s['w'], 'f': s['f']} for s in samples])
+        print(planner.scalarization_mode,learner_cfg['sample_type'])
         self.scalarization = learner_cfg['sample_type']
         self.query_mode=learner_cfg['query_mode']
         self.K = learner_cfg['K']
@@ -21,7 +23,7 @@ class Learner():
         self.feedback = []
 
         self.chebyshev_feasible_sets = None
-        print('init learner', learner_cfg, 'initial sol', self.current_sol['w'],self.current_sol['f'])
+        print('init learner', learner_cfg, 'initial sol', self.current_sol['w'], self.current_sol['f'])
 
     def receive_feedback(self, preferred, rejected):
         self.feedback.append((copy.deepcopy(preferred), copy.deepcopy(rejected)))
@@ -42,12 +44,14 @@ class Learner():
             if self.weight_feasible(w):
                 samples.append(w)
         w_exp = list(np.mean(samples,axis=0))
-        return self.planner.find_optimum(w_exp)
+        return self.planner.find_optimum_with_LUT(w_exp)
 
 
     def get_initial_solution(self):
         w = [1/self.dim]*self.dim
-        sol = self.planner.find_optimum(w)
+        w = [0] * self.dim
+        w[0] = 1
+        sol = self.planner.find_optimum_with_LUT(w)
         # return self.samples[-1]
         return sol
 
@@ -114,7 +118,7 @@ class Learner():
                     continue
                 if self.weight_feasible(sol['w']):
 
-                    regret, regret_rel = self.planner.compute_pair_regret(sol, sol_A)
+                    regret, regret_rel = self.planner.compute_pair_regret(sol_A, sol)
                     if regret >= max_regret:
                         max_regret = regret
                         sol_B = sol

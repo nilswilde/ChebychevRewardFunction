@@ -4,7 +4,8 @@ from Planner import *
 import math as m
 import numpy as np
 import dubins
-
+from matplotlib import cm
+import seaborn as sns
 def get_distance(x_1, x_2):
     return m.sqrt((x_1[0] - x_2[0]) ** 2 + (x_1[1] - x_2[1]) ** 2)
 
@@ -16,18 +17,38 @@ def in_collision(traj, obstacles=[]):
                 return True
     return False
 
+def filter_dominated_samples(samples):
+    new_samples = []
+    for s in samples:
+        dominated = False
+        for s_other in samples:
+            f = np.array(s['f'])
+            f_other = np.array(s_other['f'])
+            if np.any(f_other<f) and np.all(f_other<= f):
+                dominated = True
+                break
+        if not dominated:
+            new_samples += [s]
+    return new_samples
 
-def max_closeness_to_obst(traj, obst):
-    max_closeness = -float('inf')
-    max_closeness = 0
+
+def closeness_to_obstacles(traj, obstacles):
+
+    closeness_measure = 0
     for pos in traj:
-        dist = max(0, get_distance(pos, obst['pos'])-obst['r'])
-        # closeness = np.exp(-dist)
-        closeness = 3-dist
-        max_closeness = max(max_closeness, closeness)
-        # max_closeness += closeness
+        min_dist = float('inf')
+        for obst in obstacles:
+            dist = get_distance(pos, obst['pos'])-obst['r']
+            min_dist = min(min_dist, dist)
+            if min_dist<0:
+                return None
+        closeness = np.exp(-min_dist)
+        # closeness = 1/min_dist
+        # closeness = 3-min_dist
+        closeness_measure = max(closeness_measure, closeness)
+        # closeness_measure += closeness / len(traj)
     # return 5-min_dist
-    return max_closeness
+    return closeness_measure# -2.4
 
 
 def generate_random_goal():
@@ -69,31 +90,32 @@ class DubinsPlanner(Planner):
         '''
         if self.generated_stuff is not None and not force_new:
             return self.generated_stuff
-        min_radius, max_radius = .1, 1.0
-        # min_radius, max_radius = .2, 3.0
-        num_basic_samples = int((max_radius - min_radius) * 200) + 1
-        radia = np.linspace(min_radius, max_radius, num_basic_samples)
+
+        num_basic_samples = int((self.max_radius - self.min_radius) * 200) + 1
+        radia = np.linspace(self.min_radius, self.max_radius, num_basic_samples)
         trajects = []
         for r_idx in range(len(radia)):
             r = radia[r_idx]
             states, f = self.compute_dubins(r)
             if not in_collision(states, self.obstacles):
-                trajects.append({'states': states, 'f': f})
+                trajects.append({ 'f': f, 'states': states})
 
         trajects.reverse()
         self.generated_stuff = trajects
         return trajects
 
-    def find_optimum(self, w, radius_sampled_trajects=None):
+    def find_optimum(self, w, sample_mode=False):
         """
 
         :param w:
         :return:
         """
+        # if not sample_mode:
+        #     return self.find_optimum_numerical(w)
+
         min_cost = float('inf')
         best_traject = None
-        if radius_sampled_trajects is None:
-            radius_sampled_trajects = self.generate_trajectories()
+        radius_sampled_trajects = self.generate_trajectories()
         for traj in radius_sampled_trajects:
             cost = self.get_cost_of_traj(traj, w)
             if cost < min_cost:
@@ -104,55 +126,249 @@ class DubinsPlanner(Planner):
                 'states': best_traject['states']
                 }
 
-    def plot_trajects_and_features(self, trajects, x_axis_vals, highlight, x_label='idx', title=''):
-        fig, axes = plt.subplots(nrows=2, ncols=1, figsize=(6, 8))
+    # def find_optimum_numerical(self,w):
+    #     """
+    #     A numerimal optimization approach to find the best Dubins trajectory for a given weight
+    #     :param w:
+    #     :return:
+    #     """
+    #     def cost(radius):
+    #         states, f = self.compute_dubins(radius)
+    #         if f is None:
+    #             return 10000000000
+    #         cost = self.get_cost_of_traj({'f':f}, w)
+    #
+    #         return cost
+    #
+    #     # def bounds(radius):
+    #     #     return self.min_radius < radius < self.max_radius
+    #
+    #     from scipy.optimize import minimize
+    #     from scipy.optimize import Bounds
+    #     bounds = Bounds(self.min_radius, self.max_radius)
+    #     bounds = [(self.min_radius, self.max_radius)]
+    #     x_0 = (self.max_radius+self.min_radius) /2
+    #     x_0 = self.max_radius
+    #     # res = minimize(cost, x_0, method='trust-constr', bounds=bounds)
+    #     res = minimize(cost, x_0, method='L-BFGS-B', bounds=bounds)
+    #     # print(res)
+    #     best_radius = res.x[0]
+    #     states, f = self.compute_dubins(best_radius)
+    #     print('numerical solution', w, f, best_radius)
+    #     return {'w':w,
+    #             'f':f,
+    #             'states': states}
+
+    def find_optimum_constrained(self, target_f, utopia, nadir):
+        from scipy.optimize import minimize
+        from scipy.optimize import Bounds
+        from scipy.optimize import NonlinearConstraint
+
+        def normalize(f, dim, utopia, nadir):
+            f_norm = copy.deepcopy(f)
+            for i in range(dim):
+                f_norm[i] = (f[i] - utopia[i]) / (nadir[i] - utopia[i])
+            return f_norm
+
+        def cost(radius):
+            radius = radius[0]
+            if not self.min_radius <= radius <= self.max_radius:
+                return 10000000
+            _, f = self.compute_dubins(radius)
+            if f is None:
+                return 1000000000000
+            f_norm = normalize(f, self.dim, utopia, nadir)
+            cost = np.dot(w, f_norm)
+            return cost
+
+        def comp_alignment(f_normalized, f_target_normalized):
+            alignment = np.dot(np.subtract(f_target_normalized, nadir_normalized),
+                               np.subtract(f_normalized, nadir_normalized)) \
+                        / np.dot(np.linalg.norm(np.subtract(f_target_normalized, nadir_normalized)),
+                                 np.linalg.norm(np.subtract(f_normalized, nadir_normalized)))
+            # alignment2 = np.linalg.norm(alignment - 1)
+            return alignment
+
+        def cons_f(radius):
+            radius = radius[0]
+            if not self.min_radius <= radius <= self.max_radius:
+                return 1000000000000
+            _, f = self.compute_dubins(radius)
+            # print(f)
+            if f is None:
+                return 1000000000000
+            f_norm = normalize(f, self.dim, utopia, nadir)
+            return comp_alignment(f_norm, target_f)
+
+        print('solve constrained search', target_f)
+
+        bounds = Bounds(self.min_radius, self.max_radius)
+        nonlinear_constraint = NonlinearConstraint(cons_f, 1, 1)
+        nadir_normalized = [1] * self.dim
+        w = -np.subtract(target_f, [1] * self.dim)
+        x_0 = (self.max_radius + self.min_radius) / 2
+        x_0 = self.min_radius
+        res = minimize(cost, x_0, method='trust-constr', bounds=bounds, constraints=[nonlinear_constraint])
+        print(res)
+        best_radius = res.x[0]
+        states, f = self.compute_dubins(best_radius)
+        w = np.divide(w, np.sum(w))
+        sol = {'w': list(w),
+               'f': f,
+               'states': states}
+        # print('constrained op sol', sol, )
+        f_final_norm = normalize(f, self.dim, utopia, nadir)
+        # print(f_final_norm, comp_alignment(f_final_norm, target_f))
+
+        return sol
+
+    def plot_trajects_and_features(self, samples, title='', block=False):
+        fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(10, 5))
         all_sols = self.generate_trajectories()
+
+        pareto_optimal_solutions = filter_dominated_samples(all_sols)
         print("plotting", len(self.sampled_solutions), 'sampled solutions')
+        # for ax in axes:
+        #     ax.set_yticks([])
+        #     ax.set_xticks([])
+            # ax.axis('off')
+
         ax = axes[0]
         ax.set_title('' + title, fontsize=18)
         for o in self.obstacles:
-            circle1 = plt.Circle(o['pos'], o['r'], color='red', alpha=0.5)
+            circle1 = plt.Circle(o['pos'], o['r'], color='dimgrey', alpha=0.5)
             ax.add_patch(circle1)
             # ax.add_patch(Rectangle((o['x_0'], o['y_0']), o['x_1']-o['x_0'], o['y_1']-o['y_0']))
-        for traj in all_sols:
-            ax.plot([x[0] for x in traj['states']], [x[1] for x in traj['states']], color='grey')
-        # for traj in trajects:
-        #     ax.plot([x[0] for x in traj['states']], [x[1] for x in traj['states']])
-        # for traj in planner.sampled_solutions:
-        for traj in trajects:
-            ax.plot([x[0] for x in traj['states']], [x[1] for x in traj['states']])
-        # if highlight is not None:
-        #     ax.plot([x[0] for x in highlight['states']], [x[1] for x in highlight['states']], linewidth=4, color='red')
+        if samples is None:
+            for traj in all_sols[0::4]:
+                ax.plot([x[0] for x in traj['states']], [x[1] for x in traj['states']], color='lightgrey')
+            for traj in pareto_optimal_solutions[0::4]:
+                ax.plot([x[0] for x in traj['states']], [x[1] for x in traj['states']], color='darkseagreen')
+        else:
+            pal = sns.color_palette("tab10")
+            pal = plt.cm.hsv(np.linspace(0,1,len(samples)))
 
-        ax.set_xlabel('x pos', fontsize=16)
-        ax.set_ylabel('y pos', fontsize=16)
+            for i in range(len(samples)):
+                traj = samples[i]
+                ax.plot([x[0] for x in traj['states']], [x[1] for x in traj['states']], linewidth=3, color=pal[i])
+
+        # ax.set_xlabel('x pos', fontsize=12)
+        # ax.set_ylabel('y pos', fontsize=12)
         # axes[0].set_title('Sampled Trajectories'+title)
         ax.set_aspect('equal')
 
         # plot Pareto front
-
         ax = axes[1]
-        # plot ground set of trajectories
+        if samples is None:
+            # plot ground set of trajectories
+            phi_1, phi_2 = [traj['f'][0] for traj in all_sols], [traj['f'][1] for traj in all_sols]
+            ax.plot(phi_1, phi_2, '.', color='lightgrey', label='all trajects')
 
-        phi_1, phi_2 = [traj['f'][0] for traj in all_sols], [traj['f'][1] for traj in all_sols]
-        ax.plot(phi_1, phi_2, 'x', color='grey', label='all trajects')
-        # plot ground truth pareto curve
-        # phi_1, phi_2 = [traj['f'][0] for traj in planner.sampled_solutions], [traj['f'][1] for traj in planner.sampled_solutions]
-        phi_1, phi_2 = [traj['f'][0] for traj in trajects], [traj['f'][1] for traj in trajects]
-        ax.plot(phi_1, phi_2, 'D', color='r', label='optimal trajectories')
-        # plot sampled pareto curve
-        # phi_1, phi_2 = [traj['f'][0] for traj in trajects], [traj['f'][1] for traj in trajects]
-        # ax.plot(phi_1, phi_2, 'o', color='b', label='optimal trajectories', markersize=6)
+            phi_1, phi_2 = [traj['f'][0] for traj in pareto_optimal_solutions], [traj['f'][1] for traj in pareto_optimal_solutions]
+            ax.plot(phi_1, phi_2, 'D', color='darkseagreen', label='all trajects')
+        else:
+            # plot samples
+            phi_1, phi_2 = [traj['f'][0] for traj in samples], [traj['f'][1] for traj in samples]
+            for idx in range(len(phi_1)):
+                ax.plot(phi_1[idx], phi_2[idx], 'D', color=pal[idx%len(pal)], label='optimal trajectories')
 
         asp = np.diff(ax.get_xlim())[0] / np.diff(ax.get_ylim())[0]
         ax.set_aspect(asp)
-        if highlight is not None:
-            ax.plot(highlight['f'][0], highlight['f'][1], 'D', color='green', label='optimal trajectories',
-                    markersize=6)
+
         ax.set_xlabel('Trajectory Length', fontsize=16)
         ax.set_ylabel('Closeness', fontsize=16)
 
         fig.tight_layout()
+        if block:
+            plt.show()
+
+    def plot_linear_convexification(self, samples, title='', block=False):
+
+        def compute_matching(lin_samples, base_samples):
+            print('computed lin cost matching', len(base_samples))
+            matching={}
+            for i in range(len(base_samples)):
+                s_base = base_samples[i]
+                best_cost, best_j = 1000000, s_base
+                for j in range(len(lin_samples)):
+                    s_lin = lin_samples[j]
+                    regret = np.dot(s_lin['w'], s_base['f']) - np.dot(s_lin['w'], s_lin['f'])
+
+                    if regret < best_cost:
+                        best_cost = regret
+                        best_j = j
+                if best_cost < 1000000:
+                    matching[i] = best_j
+            print('MATCHING',matching)
+            return matching
+
+
+        fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(10, 5))
+        all_sols = self.generate_trajectories()
+        samples = samples#[0::5]
+        all_sols = filter_dominated_samples(all_sols)[0::5]
+        matching = compute_matching(samples, all_sols)
+        print("plotting", len(self.sampled_solutions), 'sampled solutions')
+        # for ax in axes:
+        #     ax.set_yticks([])
+        #     ax.set_xticks([])
+            # ax.axis('off')
+
+        ax = axes[0]
+        ax.set_title('' + title, fontsize=18)
+        pal = plt.cm.hsv(np.linspace(0, 1, len(samples)))
+        for o in self.obstacles:
+            circle1 = plt.Circle(o['pos'], o['r'], color='dimgrey', alpha=0.5)
+            ax.add_patch(circle1)
+            # ax.add_patch(Rectangle((o['x_0'], o['y_0']), o['x_1']-o['x_0'], o['y_1']-o['y_0']))
+
+        for  i in range(len(all_sols)):
+            traj = all_sols[i]
+            col = 'lightgrey'
+            col = pal[matching[i]]
+            ax.plot([x[0] for x in traj['states']], [x[1] for x in traj['states']], color=col,alpha=.15)
+        # for traj in pareto_optimal_solutions[0::4]:
+        #     ax.plot([x[0] for x in traj['states']], [x[1] for x in traj['states']], color='darkseagreen')
+
+
+
+
+        for i in range(len(samples)):
+            traj = samples[i]
+            ax.plot([x[0] for x in traj['states']], [x[1] for x in traj['states']], linewidth=4, color=pal[i])
+
+        # ax.set_xlabel('x pos', fontsize=12)
+        # ax.set_ylabel('y pos', fontsize=12)
+        # axes[0].set_title('Sampled Trajectories'+title)
+        ax.set_aspect('equal')
+
+        # plot Pareto front
+        ax = axes[1]
+
+        # plot ground set of trajectories
+        phi_1, phi_2 = [traj['f'][0] for traj in all_sols], [traj['f'][1] for traj in all_sols]
+        for i in range(len(phi_1)):
+            col = pal[matching[i]]
+            ax.plot(phi_1[i], phi_2[i], 'D', color='lightgrey', alpha=.8)
+            lin_phi = samples[matching[i]]['f']
+            ax.plot([lin_phi[0],phi_1[i]], [lin_phi[1],phi_2[i]], '--', color=col, alpha=.3)
+
+
+
+        # plot samples
+        phi_1, phi_2 = [traj['f'][0] for traj in samples], [traj['f'][1] for traj in samples]
+        for idx in range(len(phi_1)):
+            ax.plot(phi_1[idx], phi_2[idx], 'D', color=pal[idx%len(pal)], label='optimal trajectories')
+
+        asp = np.diff(ax.get_xlim())[0] / np.diff(ax.get_ylim())[0]
+        ax.set_aspect(asp)
+
+        ax.set_xlabel('Trajectory Length', fontsize=16)
+        ax.set_ylabel('Closeness', fontsize=16)
+
+        fig.tight_layout()
+        if block:
+            plt.show()
 
 class Dubins2DPlanner(DubinsPlanner):
 
@@ -161,6 +377,8 @@ class Dubins2DPlanner(DubinsPlanner):
         self.goal = (3, 2, -m.pi / 2)
         # self.goal = (1, 2, m.pi)
         print("2D Dubings, goal", self.goal)
+        self.min_radius = .2
+        self.max_radius = 1.0
 
     def get_features(self, path, radius):
         """
@@ -222,8 +440,7 @@ class Dubins2DPlanner(DubinsPlanner):
         step_size = 1 / 10 ** m
         weights = [[round(w, m), round(1 - w, m)] for w in np.arange(0, 1 + step_size, step_size)]
         print("generating", len(weights), 'evaluation samples')
-        radius_sampled_trajects = self.generate_trajectories()
-        self.sampled_solutions = self.find_optima_for_set_of_weights(weights, radius_sampled_trajects)
+        self.sampled_solutions = self.find_optima_for_set_of_weights(weights, sample_mode=True)
 
 
 class Dubins2DPlannerObstacle(Dubins2DPlanner):
@@ -231,18 +448,22 @@ class Dubins2DPlannerObstacle(Dubins2DPlanner):
     def __init__(self, num_feat=2):
 
         super().__init__(num_feat)
+        self.label = 'Dubins2DObst'
         self.goal = (3, 2, -m.pi / 2)
 
         goals = [(3, 2.2, -m.pi / 2),(3, 2.2, -m.pi / 3)]
         self.goal = (0.4, 3, -m.pi )
         self.goal = (3, 2.2, -m.pi / 2)
+        # self.goal = (2, 1.0, m.pi )
 
         self.obstacles = [
-            {'pos': (1.8, 2.0), 'r': .2, },
-                          # {'pos': (1.8, 1.3), 'r': .2, },
+            {
+                # 'pos': (0.7, .05), 'r': .2, },
+                'pos': (1.8, 2.3), 'r': .2, },
+                          {'pos': (1.8, 1.3), 'r': .2, },
                           # {'pos': (0.5, 2), 'r': .2, },
                           ]
-        self.generate_trajectories(force_new=True)
+        # self.generate_trajectories(force_new=True)
         # print("2D Dubings, goal", self.goal)
 
     def get_features(self, path, radius):
@@ -256,21 +477,19 @@ class Dubins2DPlannerObstacle(Dubins2DPlanner):
         L1 = path.segment_length(0)
         L3 = path.segment_length(2)
         L = path.path_length()
-        IS_curvature = (L1 + L3) + (1 / radius) ** 2
-        max_curvature = 1 / radius
-        straight_length = L - L1 - L3
-
 
         traj, _ = path.sample_many(0.1)
 
         obst_distances = []
-        for obst in self.obstacles:
-            min_dist = max_closeness_to_obst(traj, obst)
-            obst_distances += [min_dist]
-        features = [L, max(obst_distances)/L]
-        features = [L, max(obst_distances)]
+        obst_distances = closeness_to_obstacles(traj, self.obstacles)
+        if obst_distances is None:
+            return None
+        # features = [L, max(obst_distances)/L]
+        max_dist = get_distance((0,0), (self.goal[0],self.goal[1]))
+        features = [L, 10*obst_distances]
         # features = [L-4, max(obst_distances)**(1)*10-6] # hand made normalization, not great but meh
         # features = [L-3, max(obst_distances)**(1)*10-5]
+        # print('f =', features)
         return features
 
 
@@ -362,10 +581,10 @@ class Dubins3DPlannerObstacle(Dubins3DPlanner):
 
         traj, _ = path.sample_many(0.1)
 
-        obst_distances = []
-        for obst in self.obstacles:
-            min_dist = min_distance_to_obst(traj, obst)
-            obst_distances += [min_dist]
+        obst_distances = [0]
+        # for obst in self.obstacles:
+        #     min_dist = min_distance_to_obst(traj, obst)
+        #     obst_distances += [min_dist]
         features = [L, max(obst_distances)*10,IS_curvature]
         # features = [L-4, max(obst_distances)**(1)*10-6, IS_curvature/5] # hand made normalization, not great but meh
         # features = [L-3, max(obst_distances)**(1)*10-5]
