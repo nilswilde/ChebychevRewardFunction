@@ -1,5 +1,5 @@
 import numpy as np
-from algorithm import get_point_of_equal_cost, max_reg_in_neighbourhood_linprog#, compute_linear_combination
+# from sampling import get_point_of_equal_cost, max_reg_in_neighbourhood_linprog#, compute_linear_combination
 import copy, pickle
 import os
 from config import CFG
@@ -74,7 +74,7 @@ class Planner():
                 'f': [1]*self.dim,
                 'states': [(i,i)for i in range(10)]}
 
-    def find_optima_for_set_of_weights(self, weights, sample_mode=False):
+    def find_optima_for_set_of_weights(self, weights):
         trajects, opt_costs = [], []
         for w in weights:
             traj = self.find_optimum(w)
@@ -107,56 +107,6 @@ class Planner():
             regrets.append(regrets_row)
         return regrets
 
-    def get_neighbourhood_regret(planner, neighbourhood, traj):
-        """
-
-        :param planner:
-        :param neighbourhood:
-        :param traj:
-        :return:
-        """
-        min_regret, best_neighbour = float('inf'), None
-        for traj_neigh in neighbourhood:
-            reg,_ = planner.compute_pair_regret(traj_neigh, traj)
-            if reg < min_regret:
-                min_regret = reg
-                best_neighbour = copy.deepcopy(traj_neigh)
-        return min_regret, best_neighbour
-
-    def get_neighbourhood_regret_upper_bound(self, neighbourhood, w_new, scalars):
-        """
-
-        :param planner:
-        :param neighbourhood:
-        :param traj:
-        :return:
-        """
-
-        best_cost = float('inf')
-        # scalars = compute_linear_combination([traj['w']for traj in neighbourhood], w_new)
-        self_costs = []
-        for traj_neigh in neighbourhood:
-            upper_bound_cost = self.get_cost_of_traj(traj_neigh, w_new)
-            # print('comp upper bound cost',upper_bound_cost, traj_neigh['f'], w_new)
-            self_costs += [self.get_cost_of_traj(traj_neigh, traj_neigh['w'])]
-            if upper_bound_cost < best_cost:
-                best_cost = upper_bound_cost
-        # print('regret bound', best_cost - np.dot(scalars, self_costs), best_cost,np.dot(scalars, self_costs), scalars, self_costs)
-        regret_bound = best_cost - np.dot(scalars, self_costs)
-
-        return regret_bound
-
-    def get_neighbourhood_max_regret_weight(self, neighbourhood):
-        """
-
-        :param planner:
-        :param neighbourhood:
-        :return:
-        """
-
-        # w, lambdas = get_point_of_equal_cost(neighbourhood)  # implementation for 2 feature system only
-        w, lambdas = max_reg_in_neighbourhood_linprog(neighbourhood, self)  # implementation for n features
-        return w, lambdas
 
     def compute_minmax_regret(self, samples):
         """
@@ -212,8 +162,11 @@ class Planner():
 
 
 def load_planner(label, folder):
-    print('load', label)
-    with open(folder+label+'.pickle', 'rb') as inp:
-        loaded_object = pickle.load(inp)
+    try:
+        print('load', label)
+        with open(folder+label+'.pickle', 'rb') as inp:
+            loaded_object = pickle.load(inp)
+    except:
+        loaded_object = None
     return loaded_object
 

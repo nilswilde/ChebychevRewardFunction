@@ -24,11 +24,7 @@ def save_metrics(metrics_dict):
     metrics_df.to_csv(folder + filename)
 
 def generate_weights(K):
-    # weights = [[0,1], [1,0]]
     weights = []
-    # for k in range(K):
-    #     w_1_val = (k + 1) / (K + 1)
-    #     weights.append([w_1_val, 1 - w_1_val])
     for k in range(K):
         w = np.random.random(2)
         w = np.divide(w, sum(w))
@@ -39,21 +35,16 @@ def run_performance_test(planner_type):
     planner_original = get_planner_class(planner_type, 'linear')
 
     weights = generate_weights(10)
-    # weights = [[.1, .9], [.05, .95],[.02,.98], [.01, .99] ]
     planning_budgets = [1, 5, 10, 20, 50,100]
-    # planning_budgets = [50]
-
     data_rec = []
     for _ in range(1):
         planner = copy.deepcopy(planner_original)
         planner.scalarization_mode = 'chebyshev'
         # planner.randomize_goals()
         for w in weights:
-            print('w', w)
             # comp opt cost
             t = time.time()
             planner.set_planner_param(1)
-            traj_opt = planner.find_optimum(w)
             opt_time = time.time() - t
             planner.set_planner_param(1000)
             traj_opt = planner.find_optimum(w)
@@ -63,10 +54,8 @@ def run_performance_test(planner_type):
                 for mode in ["Standard","Heuristic"]:
                     t = time.time()
                     planner.set_planner_param(budget)
-                    # planner.g.plot()
 
                     traj = planner.find_optimum(w, heuristic=mode == "Heuristic")
-                    # planner.plot_trajects_and_features([traj, traj_opt])
                     comp_time = time.time() - t
                     cost = planner.get_cost_of_traj(traj, w)
                     data_rec += [{'Mode':mode,
@@ -75,8 +64,6 @@ def run_performance_test(planner_type):
                                   'Cost Ratio': cost/opt_cost,
                                   'Computation Time': comp_time,
                                   'Comp. Time Ratio': comp_time/opt_time}]
-    for elem in data_rec:
-        print(elem)
     save_metrics(data_rec)
 
 def visualize():
@@ -94,7 +81,6 @@ def visualize():
     ax = axes[0]
     sns.boxplot(ax=ax, data=df, x='Budget', y='Cost Ratio',hue='Mode', showfliers=False)
     ax = axes[1]
-    # sns.boxplot(ax=ax, data=df, x='Budget', y='Comp. Time Ratio', hue='Mode',showfliers=False)
     sns.boxplot(ax=ax, data=df, x='Budget', y='Computation Time', hue='Mode',showfliers=False, showmeans=True)
     y_labels = ['Cost Ratio', 'Comp. Time Ratio']
     for i in range(len(axes)):
@@ -108,6 +94,7 @@ def visualize():
             tick.label.set_fontsize(14)
     fig.tight_layout()
     plt.show()
+
 if __name__ == '__main__':
-    # run_performance_test('Graph')
-    visualize()
+    run_performance_test('Graph')
+    # visualize()

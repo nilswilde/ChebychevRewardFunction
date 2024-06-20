@@ -21,7 +21,7 @@ def get_distance(vertex, other):
 
 class Graph:
 
-    def __init__(self, img_file='map.png'):
+    def __init__(self, img_file='Lattice_Planner/map3.png'):
         """
 
         :param img_file: a black and white image. white is free space black are static obstacles
@@ -43,12 +43,11 @@ class Graph:
 
         self.x_range = len(self.map_img[0])
         self.y_range = len(self.map_img)
-        self.generate_prm(1000, 5)
+        self.generate_prm(3000, 4)
 
-        self.planning_budget = 50
-        # self.plot()
+        self.planning_budget = 10
 
-    def generate_prm(self, number_vertices=10, k=8, symmetric=True):
+    def generate_prm(self, number_vertices=10, k=4, symmetric=True):
         """
 
         :param number_vertices: number of vertices to be sampled
@@ -59,7 +58,7 @@ class Graph:
         np.random.seed(10)
         vertices_reached = []
 
-        min_dist = .05 * self.x_range
+        min_dist = .03 * self.x_range
         while True:
             print("create PRM graph, n = ", number_vertices, ', k = ', k)
             self.vertices = []
@@ -117,12 +116,9 @@ class Graph:
 
             if max(self.edges.values()) < float('inf'):  # check if we were able to construct a connected graph
                 break
-        # self.plot()
-        # self.setup_node_arc_matrix()
-
+        print("PRM finished, n=", len(self.vertices), 'm=', len(list(self.edges.values())))
     def set_edge_costs(self, w):
         self.w = copy.deepcopy(w)
-        # eps = .00001
         eps = .0000
         for e in self.edges.keys():
             self.costs[e] = np.dot(w, self.edge_features[e]) + eps
@@ -131,9 +127,8 @@ class Graph:
     def compute_edge_features(self, e):
         obst_dist = (self.vertex_obst_dists[e[0]] + self.vertex_obst_dists[e[1]]) / 2
         closeness = np.exp(-.05 * obst_dist)
-        # closeness = (np.max(list(self.vertex_obst_dists.values())) - obst_dist + 1) / 1000000
-        # return [self.edges[e] / 100, closeness * 1]
-        return [self.edges[e] / 100, closeness * 100]
+        closeness = np.exp(-.005 * obst_dist)
+        return [self.edges[e] / 100, closeness * 1000]
 
 
     def compute_path_features(self, path):
@@ -143,10 +138,8 @@ class Graph:
             e = (path[i], path[i + 1])
             weighted_path_features[0] += self.weighted_edge_features[e][0]
             weighted_path_features[1] += self.weighted_edge_features[e][1]
-            # weighted_path_features[1] = max(weighted_path_features[1], self.weighted_edge_features[e][1])
             path_features[0] += self.edge_features[e][0]
             path_features[1] += self.edge_features[e][1]
-            # path_features[1] = max(path_features[1], self.edge_features[e][1])
         return weighted_path_features, path_features
 
 
@@ -195,7 +188,6 @@ class Graph:
                 if not self.vertex_in_free_space((x, y)):
                     dist = get_distance(pos, (x, y))
                     min_dist = min(min_dist, dist)
-        # print("comp obst dist", round(time.time()-t,3), pos, min_dist)
         return min_dist
 
     def plot(self, fig=None, ax=None, paths=[], title='', show_graph=True, block=True):
@@ -249,7 +241,6 @@ class Graph:
         for idx in range(len(path) - 1):
             v, u = path[idx], path[idx + 1]
             pos_log += [v]
-            # print('is even a vertex??', v, v in self.vertices)
             steps = int(self.edges[(v, u)] / speed) - 1
             for i in range(steps):
                 w = (i / steps * u[0] + (1 - i / steps) * v[0], i / steps * u[1] + (1 - i / steps) * v[1])
@@ -288,7 +279,7 @@ class Graph:
 
         plt.show()
 
-    def compute_shortest_path(self, s, g, scalarization='linear', heuristic=False):
+    def compute_shortest_path(self, s, g, scalarization='linear', heuristic=False, ):
 
         """
 
@@ -296,16 +287,14 @@ class Graph:
         import heapq
         def path_dominated(path_to_v, other_paths_to_v, v):
             _, features_j = self.compute_path_features(list(path_to_v) + [v])
-            # print('comp sub paths', path_to_v)
             for other_path in other_paths_to_v:
-                # print('other', other_path)
                 _, features_i = self.compute_path_features(list(other_path) + [v])
                 if np.all(np.array(features_i) <= np.array(features_j)) \
                         and np.any(np.array(features_i) < np.array(features_j)):
                     return True
             return False
 
-        print('Run shortest path search', scalarization, s, g)
+        print('Run shortest path search', scalarization, s, g,'use heuristic?', heuristic, self.planning_budget)
         t_s = time.time()
 
         paths_to_v = {}
@@ -315,13 +304,10 @@ class Graph:
         paths_to_v[s] = [[]]
         open_set = [(0, s, [])]
         heapq.heapify(open_set)
-        # max_path_records = 1 if scalarization == 'linear' else 200
         max_path_records = self.planning_budget
-        print('MAX COST PATH SEARCH', max_path_records)
         iter=0
         while len(open_set) > 0:
             iter += 1
-            # print('iter', iter, len(open_set))
             f, curr, path_to_prev = heapq.heappop(open_set)
 
             if curr == g:  # terminate when the goal is found
@@ -331,8 +317,6 @@ class Graph:
             path_to_curr = tuple(list(path_to_prev) + [curr])
             neighbours = self.neighbours[curr]
             for neigh in neighbours:
-
-                # tent_score = max(weighted_cost_vec)
                 if neigh in path_to_curr:  # avoid cycles
                     continue
                 if path_to_curr in paths_to_v[neigh]:  # avoid duplicates
@@ -341,7 +325,6 @@ class Graph:
                     continue
 
                 if path_dominated(path_to_curr, paths_to_v[neigh], neigh):
-                    # print('path sub features dominated')
                     continue
                 if len(path_to_curr) != len(set(path_to_curr)):
                     raise
@@ -354,21 +337,7 @@ class Graph:
                 else:
                     tent_score = max(weighted_cost_vec) + .00001 *sum(weighted_cost_vec)
                 heapq.heappush(open_set, (tent_score, neigh, path_to_curr))
-        # # print("chebyshev path search exhausted")
-        # # print('paths_to_goal', len(paths_to_v[g]))
-        # best_cost, best_length, best_path = float('inf'),float('inf'), None
-        # for path in paths_to_v[g]:
-        #     full_path = list(path) + [g]
-        #     weighted_cost_vec, _ = _get_path_features(full_path)
-        #     # if scalarization == 'linear':
-        #     #     cost = sum(weighted_cost_vec)
-        #     # else:
-        #     #     cost = max(weighted_cost_vec)
-        #     cost = max(weighted_cost_vec)
-        #     if cost < best_cost:
-        #         best_cost = cost
-        #         best_path = full_path
-        # return best_path
+
 
 class GraphMinMax(Graph):
     def compute_path_features(self, path):

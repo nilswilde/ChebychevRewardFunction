@@ -3,9 +3,7 @@ import matplotlib.pyplot as plt
 from Planner import *
 import math as m
 import numpy as np
-import dubins
-from matplotlib import cm
-import seaborn as sns
+from matplotlib import animation
 
 
 def get_distance(x_1, x_2):
@@ -41,6 +39,9 @@ def filter_dominated_samples(samples):
 
 
 def closeness_to_obstacles(traj, bounds, obstacles):
+    """
+
+    """
     closeness_measure = 0
     if in_collision(traj, bounds, obstacles):
         return None
@@ -55,7 +56,6 @@ def closeness_to_obstacles(traj, bounds, obstacles):
                 return None
         closeness = np.exp(-min_dist)
         closeness_measure = max(closeness_measure, closeness)
-
     return closeness_measure
 
 
@@ -69,30 +69,28 @@ def generate_random_goal():
         return (x, y, theta)
 
 
-class DubinsAdvanced(Planner):
+class DiskPlanner(Planner):
     def __init__(self, scalarization):
         super().__init__(2, scalarization, 'Dubins2DAdvanced')
-        self.generated_stuff = None
+        self.pregenerated_trajectories = None
         self.min_radius = .2
         self.max_radius = 1.0
-        self.label = 'Dubins2DAdvanced'
+        self.label = 'DiskPlanner2D'
 
-        # self.goal = (3, 2.2, -m.pi / 2)
+        # self.start = (.5, .8)
+        # self.goal = (3, 2.8, -m.pi / 4)
+        self.start = (.8, 1.5)
+        self.goal = (3, 2.3, -m.pi / 4)
 
-        self.start = (.5, .8)
-        self.goal = (3, 2.8, -m.pi / 4)
-
-        self.obstacles = [
+        self.obstacles = [ # disk shaped obstacles
             {'pos': (1.8, 2.8), 'r': .2, },
             {'pos': (2, 1.6), 'r': .2, },
         ]
-
-        # self.start = (.5, .5)
-        # self.goal = (3.5, .5)
-        # self.obstacles = [
-        #     {'pos': (2, .8), 'r': .2, },
+        # self.obstacles = [  # disk shaped obstacles
+        #     {'pos': (1.8, 2.3), 'r': .25, },
+        #     {'pos': (2, 1.1), 'r': .3, },
         # ]
-        self.bounds = [(-.1, 4), (-.1, 4)]
+        self.bounds = [(.15, 3.3), (.19, 3.1)]
         self.res = 1000
         self.generate_trajectories()
 
@@ -184,7 +182,6 @@ class DubinsAdvanced(Planner):
             traj2 = traj0_b + arc_bc[1:-1] + trajc_2
             traj3 = traj0_a + arc_ad[1:-1] + trajd_2
             traj4 = traj0_b + arc_bd[1:-1] + trajd_2
-            # plot_trajects([traj1])
 
             for traj in [traj1, traj2, traj3, traj4]:
                 if not in_collision(traj, self.bounds, self.obstacles):
@@ -192,22 +189,6 @@ class DubinsAdvanced(Planner):
                         traj_list = [list(elem) for elem in traj]
                         trajects.append(traj_list)
 
-        if False:
-            fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(5, 5))
-            for o in self.obstacles:
-                circle1 = plt.Circle(o['pos'], o['r'], color='dimgrey', alpha=0.5)
-                ax.add_patch(circle1)
-            for o in circles:
-                circle1 = plt.Circle(o['pos'], o['r'], color='blue', alpha=0.3)
-                ax.add_patch(circle1)
-            for traj in trajects:
-                print('features', self.get_features(traj))
-                # print([list(elem) for elem in traj])
-                ax.plot([x[0] for x in traj], [x[1] for x in traj], '--')
-                # ax.plot([x[0] for x in traj], [x[1] for x in traj], 'D')
-            traj = min(trajects, key=len)
-            # ax.plot([x[0] for x in traj], [x[1] for x in traj], '.', color='black', linewidth=2)
-            plt.show()
         sols = []
         for traj in trajects:
             sols.append({'f': self.get_features(traj), 'states': traj})
@@ -218,9 +199,9 @@ class DubinsAdvanced(Planner):
         Pre-generate a large set of Dubins' paths for different turn radia
         :return:
         '''
-        if self.generated_stuff is not None and not force_new:
-            return self.generated_stuff
-        print('generate base set')
+        if self.pregenerated_trajectories is not None and not force_new:
+            return self.pregenerated_trajectories
+        print('generate base set of trajectories')
         clearances = np.linspace(1, 7, 20)
 
         all_sols = []
@@ -230,7 +211,7 @@ class DubinsAdvanced(Planner):
                 if sol not in all_sols:
                     all_sols.append(sol)
         all_sols.reverse()
-        self.generated_stuff = all_sols
+        self.pregenerated_trajectories = all_sols
         return all_sols
 
     def find_optimum(self, w, sample_mode=False):
@@ -332,14 +313,13 @@ class DubinsAdvanced(Planner):
             ax.set_xticks([])
             ax.axis('off')
 
-        pal = plt.cm.viridis(np.linspace(0, 1, len(pareto_optimal_solutions)))
+        pal = plt.cm.plasma(np.linspace(.0, .9, len(pareto_optimal_solutions)))
         ax = axes[0]
         # ax.set_title('' + title, fontsize=18)
         for o in self.obstacles:
             circle1 = plt.Circle(o['pos'], o['r'], color='dimgrey', alpha=0.5)
             ax.add_patch(circle1)
-            # ax.add_patch(Rectangle((o['x_0'], o['y_0']), o['x_1']-o['x_0'], o['y_1']-o['y_0']))
-        if samples is None:
+        if samples is None: # if no samples are given, we plot the ground set of solutions
             for traj in all_sols:
                 ax.plot([x[0] for x in traj['states']], [x[1] for x in traj['states']], color='lightgrey')
             for i in range(len(pareto_optimal_solutions)):
@@ -356,11 +336,9 @@ class DubinsAdvanced(Planner):
                     col = 'black'
                 ax.plot([x[0] for x in traj['states']], [x[1] for x in traj['states']], linewidth=2, color=col)
         # plot bounds
-        ax.plot([self.bounds[0][0], self.bounds[0][1], self.bounds[1][1], self.bounds[1][0], self.bounds[0][0]],
+        ax.plot([self.bounds[0][0], self.bounds[0][1], self.bounds[0][1], self.bounds[0][0], self.bounds[0][0]],
                 [self.bounds[1][0], self.bounds[1][0], self.bounds[1][1], self.bounds[1][1], self.bounds[1][0]], '--',
                 color='darkgrey')
-        # ax.set_xlim([-.1,3.7])
-        # ax.set_ylim([-.1,3.7])
         ax.set_aspect('equal')
 
         # plot Pareto front
@@ -391,10 +369,53 @@ class DubinsAdvanced(Planner):
 
         ax.set_xlabel('Trajectory Length', fontsize=16)
         ax.set_ylabel('Closeness', fontsize=16)
-
+        ax.set_title(title, fontsize=20)
         fig.tight_layout()
         if block:
             plt.show()
+
+    def plot_animation(self, samples, title='', block=False):
+        fig, ax = plt.subplots(figsize=(8, 8))
+        # plot obstsacles
+        for o in self.obstacles:
+            circle1 = plt.Circle(o['pos'], o['r'], color='dimgrey', alpha=0.5)
+            ax.add_patch(circle1)
+        # plot bounds
+        ax.set_yticks([])
+        ax.set_xticks([])
+        ax.axis('off')
+        print("BOUNDS", self.bounds)
+        ax.plot([self.bounds[0][0], self.bounds[0][1], self.bounds[0][1], self.bounds[0][0], self.bounds[0][0]],
+                [self.bounds[1][0], self.bounds[1][0], self.bounds[1][1], self.bounds[1][1], self.bounds[1][0]], '--',
+                color='darkgrey')
+        ax.set_aspect('equal')
+        num_lines = len(samples)
+        x = [[s[0] for s in samples[i]['states']] for i in range(num_lines)]
+        y = [[s[1] for s in samples[i]['states']] for i in range(num_lines)]
+        eps=.0
+        k = 50
+        for i in range(num_lines):
+            x_offset = (np.random.random()-.5)*eps
+            y_offset = (np.random.random()-.5)*eps
+            x[i] = x[i][::k]+[x[i][-1]]
+            y[i] = y[i][::k]+[y[i][-1]]
+            for j in range(1, len(x[i])-1):
+                x[i][j] += x_offset
+                y[i][j] += y_offset
+        print('animating', num_lines, 'lines, ', [len(x_i) for x_i in x])
+        empty_values = np.empty((1, num_lines))
+        empty_values[:] = np.nan
+        lines = ax.plot(empty_values, empty_values)
+        def animate(n):
+            # lines = []
+            for i, line in enumerate(lines):
+                x_i = x[i]
+                y_i = y[i]
+                n_max = min(n, len(x_i)-1)
+                line.set_data(x_i[:n_max], y_i[:n_max])
+            return lines
+        anim = animation.FuncAnimation(fig, animate, frames=1000, interval=10)
+        plt.show()
 
     def plot_linear_convexification(self, samples, title='', block=False):
 

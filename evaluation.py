@@ -17,10 +17,8 @@ def compute_metrics(planner, samples, K, save=True):
     metrics = []
     for label in samples.keys():
         stats = {'sampler': label, 'planner': planner.label, 'K':K}
-        norm_samples = samples[label]#normalize_features(planner, samples[label])
-        # stats.update(planner.compute_minmax_regret(norm_samples))
+        norm_samples = normalize_features(planner, samples[label])
         stats = compute_dispersion(stats, norm_samples)
-        # stats = compute_hypervolume(stats, planner, norm_samples)
         print(stats)
         stats['samples'] = samples[label]
         metrics.append(stats)
@@ -28,24 +26,6 @@ def compute_metrics(planner, samples, K, save=True):
     df = pd.DataFrame(metrics)
     if save:
         save_metrics(planner, df, K)
-    return metrics
-
-
-def evaluate_robust_solution(planner, samples, robuts_solutions, K):
-    print("eval rob sol")
-    metrics = []
-    for label in samples.keys():
-        stats = {'sampler': label, 'planner': planner.label, 'K': K}
-        norm_samples = samples[label]  # normalize_features(planner, samples[label])
-        print(label,"Rob Error", planner.compute_minmax_regret([robuts_solutions[label]]))
-        stats.update(planner.compute_minmax_regret([robuts_solutions[label]]))
-
-        # print(stats)
-        stats['samples'] = samples[label]
-        metrics.append(stats)
-
-    df = pd.DataFrame(metrics)
-    save_metrics(planner, df, K)
     return metrics
 
 
@@ -61,7 +41,6 @@ def compute_dispersion(stats, samples):
         for j in range(i+1,len(samples)):
             f_j = samples[j]['f']
             dist = get_distance(f_i, f_j)
-            # summed_diff += get_distance(f_i, f_j,'L1')
             smallest_radius = min(smallest_radius, dist/2)
         summed_diff += smallest_radius
         dispersion = max(dispersion, smallest_radius)
